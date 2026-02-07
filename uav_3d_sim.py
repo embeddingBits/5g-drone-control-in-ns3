@@ -2,9 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 
-# =============================
 # Simulation parameters
-# =============================
 NUM_DRONES = 3
 NUM_USERS = 12
 SIM_TIME = 200          # seconds
@@ -15,9 +13,7 @@ COVERAGE_RADIUS = 120   # meters
 BATTERY_INIT = 10000    # joules
 BATTERY_DRAIN = 25      # J/s
 
-# =============================
 # Entities
-# =============================
 class Drone:
     def __init__(self, drone_id, pos):
         self.id = drone_id
@@ -50,9 +46,7 @@ class User:
         self.served = False
 
 
-# =============================
 # Helper functions
-# =============================
 def distance(a, b):
     return np.linalg.norm(a - b)
 
@@ -66,9 +60,7 @@ def update_coverage(drones, users):
                 break
 
 
-# =============================
 # Initialization
-# =============================
 
 # Disaster zones (targets)
 targets = [
@@ -97,9 +89,7 @@ for cx, cy in [(300,300), (450,150), (150,450)]:
                                  0]))
         uid += 1
 
-# =============================
 # 3D Visualization
-# =============================
 fig = plt.figure(figsize=(9, 8))
 ax = fig.add_subplot(111, projection='3d')
 
@@ -117,9 +107,7 @@ served_scatter = ax.scatter([], [], [], c='green', s=30, label="Served Users")
 
 ax.legend()
 
-# =============================
 # Animation step
-# =============================
 time_text = ax.text2D(0.02, 0.95, "", transform=ax.transAxes)
 
 def update(frame):
@@ -159,9 +147,7 @@ def update(frame):
     return drone_scatter, user_scatter, served_scatter, time_text
 
 
-# =============================
 # Run animation
-# =============================
 ani = FuncAnimation(fig, update,
                     frames=range(0, SIM_TIME, DT),
                     interval=80)
