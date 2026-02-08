@@ -1,8 +1,3 @@
-"""
-DISASTER RELIEF DRONE SIMULATION - CONFIGURATION & PARAMETERS
-This file contains all simulation parameters, constants, and class definitions.
-"""
-
 import numpy as np
 import networkx as nx
 

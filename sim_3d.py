@@ -192,7 +192,6 @@ print("Starting 3D visualization...")
 print("- Shows network topology in 3D space")
 print("- Link colors indicate capacity (violet=high, plum=low)")
 print("- Drone colors: Red=SEARCH, Blue=CLUSTER, Cyan=RELAY")
-print("="*60 + "\n")
 
 ani = FuncAnimation(fig, animate, frames=range(0, SIM_TIME, DT),
                     interval=50, blit=False)
@@ -201,9 +200,7 @@ plt.tight_layout()
 plt.show()
 
 # FINAL STATISTICS
-print("\n" + "="*60)
 print("SIMULATION COMPLETE - 3D VIEW")
-print("="*60)
 
 final_detected = sum(u.group_size for u in users if u.detected)
 final_served = sum(u.group_size for u in users if u.served)
@@ -223,5 +220,3 @@ print("\nKey Detections:")
 for i, notif in enumerate(operator.notifications[:10]):
     print(f"  {i+1}. t={notif['time']}s - Drone {notif['drone_id']} detected "
           f"{notif['group_size']} person(s)")
-
-print("\n" + "="*60)
