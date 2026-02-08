@@ -32,7 +32,6 @@ ax_3d.set_ylabel("Y (m)", fontsize=12)
 ax_3d.set_zlabel("Altitude (m)", fontsize=12)
 ax_3d.set_title("3D UAV Disaster Relief Network with Monitoring Station", fontsize=16, fontweight='bold')
 
-# Initialize 3D plot elements
 drone_scatter_3d = ax_3d.scatter([], [], [], c='red', s=150, marker='^', 
                                  edgecolors='black', linewidths=2, label="Drones")
 user_scatter_3d = ax_3d.scatter([], [], [], c='gray', s=50, alpha=0.6, label="Undetected")
@@ -47,12 +46,10 @@ station_3d = ax_3d.scatter([STATION_POSITION[0]], [STATION_POSITION[1]], [STATIO
                           c='darkgreen', s=100, marker='D', edgecolors='black', 
                           linewidths=3, label="Monitoring Station")
 
-# Add ground plane grid for reference
 xx, yy = np.meshgrid(np.linspace(0, AREA_SIZE, 10), np.linspace(0, AREA_SIZE, 10))
 zz = np.zeros_like(xx)
 ax_3d.plot_surface(xx, yy, zz, alpha=0.05, color='gray')
 
-# Add tower-to-station wired link (permanent)
 tower_station_line = ax_3d.plot([TOWER_POSITION[0], STATION_POSITION[0]], 
                                  [TOWER_POSITION[1], STATION_POSITION[1]],
                                  [TOWER_POSITION[2], STATION_POSITION[2]], 
@@ -61,11 +58,9 @@ tower_station_line = ax_3d.plot([TOWER_POSITION[0], STATION_POSITION[0]],
 
 ax_3d.legend(loc='upper left', fontsize=9)
 
-# Status text
 status_text = fig.text(0.5, 0.02, "", ha='center', fontsize=11,
                       bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.9))
 
-# Store line objects for 3D links
 link_lines_3d = []
 
 # ANIMATION UPDATE FUNCTION
@@ -73,20 +68,16 @@ def animate(frame):
     global current_time, next_cluster_id, link_lines_3d
     current_time = frame
     
-    # Run simulation step
     G, next_cluster_id = update_simulation(drones, users, tower, station, current_time, 
                                            clusters_formed, next_cluster_id, operator)
     
     alive_drones = [d for d in drones if d.alive]
     
-    # Remove old link lines
     for line in link_lines_3d:
         line.remove()
     link_lines_3d = []
     
-    # Draw 3D network links
     for d in alive_drones:
-        # Tower to drone links
         if f'd{d.id}' in G and G.has_edge(f'd{d.id}', 'tower'):
             edge_data = G[f'd{d.id}']['tower']
             capacity = edge_data['capacity']
