@@ -1,310 +1,228 @@
-"""
-DISASTER RELIEF DRONE SIMULATION - NETWORK COVERAGE MAP
-This file handles the 2D coverage map showing drone ranges, user connections, and service areas.
-"""
-
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from matplotlib.patches import Circle
+import networkx as nx
 
 from config_params import *
 
 # INITIALIZATION
-print("\n" + "="*60)
-print("NETWORK COVERAGE MAP SIMULATION")
-print("="*60)
-print(f"Simulation Duration: {SIM_TIME} seconds (extended)")
+print("\n" + "="*70)
+print("2D NETWORK COVERAGE MAP SIMULATION")
+print("="*70)
+print(f"Simulation Duration: {SIM_TIME} seconds")
 print(f"Number of Drones: {NUM_DRONES}")
-print(f"Coverage Radius: {COVERAGE_RADIUS}m")
-print(f"Search Radius: {SEARCH_RADIUS}m")
-print("="*60 + "\n")
+print(f"Coverage Radius: {COVERAGE_RADIUS}m   Search Radius: {SEARCH_RADIUS}m")
+print(f"Area: {AREA_SIZE} × {AREA_SIZE} m")
+print("="*70 + "\n")
 
-current_time = 0
+current_time = 0.0
 operator = OperatorNotification()
-tower = Tower(TOWER_POSITION)
-drones = initialize_drones()
-users = initialize_users()
+tower   = Tower(TOWER_POSITION)
+station = MonitoringStation(STATION_POSITION)
+drones  = initialize_drones()
+users   = initialize_users()
 clusters_formed = {}
 next_cluster_id = 0
 
+# Create graph 
+G = nx.DiGraph()
+
 # VISUALIZATION SETUP
-fig, ax_coverage = plt.subplots(figsize=(14, 12))
+fig, ax = plt.subplots(figsize=(14, 12))
+ax.set_xlim(0, AREA_SIZE)
+ax.set_ylim(0, AREA_SIZE)
+ax.set_xlabel("X (m)", fontsize=13)
+ax.set_ylabel("Y (m)", fontsize=13)
+ax.set_title("2D Drone Coverage & Multi-Hop Network Map", fontsize=16, fontweight='bold')
+ax.set_aspect('equal')
+ax.grid(True, alpha=0.3, linestyle='--')
 
-ax_coverage.set_xlim(0, AREA_SIZE)
-ax_coverage.set_ylim(0, AREA_SIZE)
-ax_coverage.set_xlabel("X (m)", fontsize=14)
-ax_coverage.set_ylabel("Y (m)", fontsize=14)
-ax_coverage.set_title("Drone Coverage & Service Map", fontsize=18, fontweight='bold')
-ax_coverage.set_aspect('equal')
-ax_coverage.grid(True, alpha=0.3, linestyle='--')
+status_text = fig.text(0.5, 0.015, "", ha='center', va='bottom', fontsize=11,
+                       bbox=dict(boxstyle='round,pad=0.5', facecolor='#e8f5e9', alpha=0.92))
 
-# Status text
-status_text = fig.text(0.5, 0.02, "", ha='center', fontsize=12,
-                      bbox=dict(boxstyle='round', facecolor='lightgreen', alpha=0.9))
+link_lines = []
 
 # ANIMATION UPDATE FUNCTION
 def animate(frame):
-    global current_time, next_cluster_id
-    current_time = frame
-    
-    # Run simulation step
-    G, next_cluster_id = update_simulation(drones, users, tower, current_time, 
-                                           clusters_formed, next_cluster_id, operator)
-    
+    global current_time, next_cluster_id, G, link_lines
+
+    current_time = frame * DT
+
+    # Core simulation step 
+    G, next_cluster_id = update_simulation(
+        drones, users, tower, station, current_time,
+        clusters_formed, next_cluster_id, operator
+    )
+
     alive_drones = [d for d in drones if d.alive]
-    
-    # Clear and redraw coverage map
-    ax_coverage.clear()
-    ax_coverage.set_xlim(0, AREA_SIZE)
-    ax_coverage.set_ylim(0, AREA_SIZE)
-    ax_coverage.set_xlabel("X (m)", fontsize=14)
-    ax_coverage.set_ylabel("Y (m)", fontsize=14)
-    ax_coverage.set_title("Drone Coverage & Service Map", fontsize=18, fontweight='bold')
-    ax_coverage.set_aspect('equal')
-    ax_coverage.grid(True, alpha=0.3, linestyle='--')
-    
-    # Draw 5G tower range (background)
-    tower_range = Circle((TOWER_POSITION[0], TOWER_POSITION[1]), MAX_5G_RANGE,
-                         fill=True, facecolor='purple', alpha=0.05,
-                         edgecolor='purple', linewidth=2.5, 
-                         linestyle='--', label='Tower Range')
-    ax_coverage.add_patch(tower_range)
-    
-    # Draw coverage circles for each drone
+
+    ax.clear()
+
+    link_lines = []
+    # Restore axes properties
+    ax.set_xlim(0, AREA_SIZE)
+    ax.set_ylim(0, AREA_SIZE)
+    ax.set_xlabel("X (m)")
+    ax.set_ylabel("Y (m)")
+    ax.set_title("2D Drone Coverage & Multi-Hop Network Map", fontsize=16, fontweight='bold')
+    ax.set_aspect('equal')
+    ax.grid(True, alpha=0.3, linestyle='--')
+
+    # Tower coverage background
+    ax.add_patch(Circle(TOWER_POSITION[:2], MAX_5G_RANGE,
+                        fc='purple', ec='purple', lw=1.5, ls='--', alpha=0.08))
+
+    # Draw network links 
     for d in alive_drones:
-        if d.mode == "CLUSTER":
-            color = 'blue'
-            fill_alpha = 0.18
-            edge_alpha = 0.6
-            edge_width = 2
-        else:
-            color = 'red'
-            fill_alpha = 0.12
-            edge_alpha = 0.4
-            edge_width = 1.8
-            
-        # Coverage circle
-        circle = Circle((d.pos[0], d.pos[1]), COVERAGE_RADIUS, 
-                       fill=True, facecolor=color, alpha=fill_alpha,
-                       edgecolor=color, linewidth=edge_width, linestyle='-')
-        ax_coverage.add_patch(circle)
-        
-        # Search radius (lighter, dashed)
-        search_circle = Circle((d.pos[0], d.pos[1]), SEARCH_RADIUS, 
-                              fill=False, edgecolor=color, linewidth=1.2, 
-                              linestyle=':', alpha=0.35)
-        ax_coverage.add_patch(search_circle)
-    
-    # Draw connection lines from users to drones
+        node = f'd{d.id}'
+        if node in G:
+            # Drone → Tower
+            if G.has_edge(node, 'tower'):
+                cap = G[node]['tower']['capacity']
+                color = 'darkviolet' if cap > 70 else 'mediumpurple' if cap > 40 else 'plum'
+                alpha = 0.75 if cap > 70 else 0.65
+                lw = 2.8 if cap > 70 else 2.2
+                line = ax.plot([d.pos[0], TOWER_POSITION[0]],
+                               [d.pos[1], TOWER_POSITION[1]],
+                               color=color, alpha=alpha, lw=lw, zorder=1)[0]
+                link_lines.append(line)
+
+            # Drone ↔ Drone 
+            for d2 in alive_drones:
+                if d.id < d2.id:
+                    n2 = f'd{d2.id}'
+                    if G.has_edge(node, n2):
+                        cap = G[node][n2]['capacity']
+                        color = 'green' if cap > 70 else 'orange' if cap > 40 else 'red'
+                        alpha = 0.65 if cap > 70 else 0.55
+                        lw = 1.9 if cap > 70 else 1.5
+                        line = ax.plot([d.pos[0], d2.pos[0]],
+                                       [d.pos[1], d2.pos[1]],
+                                       color=color, alpha=alpha, lw=lw, zorder=1)[0]
+                        link_lines.append(line)
+
+    # Drone coverage circles
+    for d in alive_drones:
+        color = 'blue' if d.mode == "CLUSTER" else 'cyan' if d.mode == "RELAY" else 'red'
+        alpha_fill = 0.22 if d.mode == "CLUSTER" else 0.14
+        ax.add_patch(Circle(d.pos[:2], COVERAGE_RADIUS, fc=color, ec=color, alpha=alpha_fill))
+        ax.add_patch(Circle(d.pos[:2], SEARCH_RADIUS, fc='none', ec=color, alpha=0.35, ls=':', lw=1.1))
+
+    # User → Drone serving lines 
     for u in users:
         if u.served and u.connected_drone is not None:
-            drone = drones[u.connected_drone]
-            
-            # Color by number of hops
-            if u.hops_to_tower == 1:
-                line_color = 'darkgreen'
-                line_alpha = 0.5
-                line_width = 1.5
-            elif u.hops_to_tower == 2:
-                line_color = 'green'
-                line_alpha = 0.4
-                line_width = 1.2
-            else:
-                line_color = 'yellowgreen'
-                line_alpha = 0.3
-                line_width = 1
-            
-            ax_coverage.plot([u.pos[0], drone.pos[0]], 
-                           [u.pos[1], drone.pos[1]], 
-                           color=line_color, alpha=line_alpha, 
-                           linewidth=line_width, linestyle='-')
-    
-    # Categorize users
+            drone = next((d for d in drones if d.id == u.connected_drone), None)
+            if drone:
+                hops = u.hops_to_tower or 99
+                color = 'darkgreen' if hops <= 1 else 'limegreen' if hops == 2 else '#ffaa00'
+                alpha = 0.6 - 0.15*max(0, hops-1)
+                lw = 1.8 - 0.4*max(0, hops-1)
+                ax.plot([u.pos[0], drone.pos[0]],
+                        [u.pos[1], drone.pos[1]],
+                        color=color, alpha=max(0.3, alpha), lw=lw, zorder=3)
+
+    # Users by status
     undetected = [u for u in users if not u.detected]
-    detected = [u for u in users if u.detected and not u.served]
-    served = [u for u in users if u.served]
-    
-    # Draw users with size based on group size
+    detected   = [u for u in users if u.detected and not u.served]
+    served     = [u for u in users if u.served]
+
     if undetected:
-        sizes = [30 + u.group_size * 4 for u in undetected]
-        ax_coverage.scatter([u.pos[0] for u in undetected], 
-                          [u.pos[1] for u in undetected],
-                          c='gray', s=sizes, alpha=0.7, 
-                          edgecolors='black', linewidths=0.8, 
-                          label=f'Undetected ({len(undetected)})')
-    
+        ax.scatter([u.pos[0] for u in undetected], [u.pos[1] for u in undetected],
+                   s=[28 + u.group_size*6 for u in undetected],
+                   c='lightgray', edgecolor='k', alpha=0.75,
+                   label=f'Undetected ({len(undetected)})')
+
     if detected:
-        sizes = [40 + u.group_size * 4 for u in detected]
-        ax_coverage.scatter([u.pos[0] for u in detected], 
-                          [u.pos[1] for u in detected],
-                          c='orange', s=sizes, marker='*', 
-                          edgecolors='black', linewidths=0.8, 
-                          label=f'Detected ({len(detected)})')
-    
+        ax.scatter([u.pos[0] for u in detected], [u.pos[1] for u in detected],
+                   s=[40 + u.group_size*6 for u in detected],
+                   marker='*', c='orange', edgecolor='darkorange',
+                   label=f'Detected ({len(detected)})')
+
     if served:
-        sizes = [50 + u.group_size * 4 for u in served]
-        ax_coverage.scatter([u.pos[0] for u in served], 
-                          [u.pos[1] for u in served],
-                          c='green', s=sizes, marker='s', 
-                          edgecolors='black', linewidths=0.8, 
-                          label=f'Served ({len(served)})')
-    
-    # Draw drones with mode-based colors
-    drone_colors = []
-    drone_labels_map = {'SEARCH': 0, 'CLUSTER': 0, 'RELAY': 0}
-    
-    for d in alive_drones:
-        if d.mode == "CLUSTER":
-            drone_colors.append('blue')
-            drone_labels_map['CLUSTER'] += 1
-        elif d.mode == "RELAY":
-            drone_colors.append('cyan')
-            drone_labels_map['RELAY'] += 1
-        else:
-            drone_colors.append('red')
-            drone_labels_map['SEARCH'] += 1
-    
+        ax.scatter([u.pos[0] for u in served], [u.pos[1] for u in served],
+                   s=[48 + u.group_size*6 for u in served],
+                   marker='s', c='limegreen', edgecolor='darkgreen',
+                   label=f'Served ({len(served)})')
+
+    # Drones
     if alive_drones:
-        ax_coverage.scatter([d.pos[0] for d in alive_drones], 
-                          [d.pos[1] for d in alive_drones],
-                          c=drone_colors, s=200, marker='^', 
-                          edgecolors='black', linewidths=2, zorder=5)
-        
-        # Add drone labels with battery percentage
+        colors = ['blue' if d.mode == "CLUSTER" else 'cyan' if d.mode == "RELAY" else 'red'
+                  for d in alive_drones]
+        ax.scatter([d.pos[0] for d in alive_drones], [d.pos[1] for d in alive_drones],
+                   c=colors, s=220, marker='^', edgecolor='black', lw=1.8, zorder=10)
+
         for d in alive_drones:
-            battery_pct = (d.battery / BATTERY_INIT) * 100
-            label_color = 'green' if battery_pct > 50 else ('orange' if battery_pct > 25 else 'red')
-            
-            ax_coverage.text(d.pos[0], d.pos[1]+25, 
-                           f'D{d.id}\n{battery_pct:.0f}%', 
-                           ha='center', fontsize=8, fontweight='bold',
-                           bbox=dict(boxstyle='round,pad=0.4', 
-                                   facecolor='white', 
-                                   alpha=0.85, 
-                                   edgecolor=label_color,
-                                   linewidth=1.5))
-    
-    # Draw 5G Tower
-    ax_coverage.scatter([TOWER_POSITION[0]], [TOWER_POSITION[1]], 
-                       c='purple', s=500, marker='s', 
-                       edgecolors='black', linewidths=3, 
-                       label='5G Tower', zorder=10)
-    ax_coverage.text(TOWER_POSITION[0], TOWER_POSITION[1]-30, 
-                    '5G TOWER', ha='center', fontsize=10, fontweight='bold',
-                    bbox=dict(boxstyle='round,pad=0.5', facecolor='purple', 
-                            alpha=0.3, edgecolor='purple', linewidth=2))
-    
-    # Create custom legend
-    from matplotlib.lines import Line2D
-    legend_elements = []
-    
-    # Add user status
-    if undetected:
-        legend_elements.append(Line2D([0], [0], marker='o', color='w', 
-                                     markerfacecolor='gray', markersize=10,
-                                     label=f'Undetected ({len(undetected)})'))
-    if detected:
-        legend_elements.append(Line2D([0], [0], marker='*', color='w', 
-                                     markerfacecolor='orange', markersize=12,
-                                     label=f'Detected ({len(detected)})'))
-    if served:
-        legend_elements.append(Line2D([0], [0], marker='s', color='w', 
-                                     markerfacecolor='green', markersize=10,
-                                     label=f'Served ({len(served)})'))
-    
-    # Add drone modes
-    if drone_labels_map['SEARCH'] > 0:
-        legend_elements.append(Line2D([0], [0], marker='^', color='w', 
-                                     markerfacecolor='red', markersize=12,
-                                     label=f'SEARCH ({drone_labels_map["SEARCH"]})'))
-    if drone_labels_map['CLUSTER'] > 0:
-        legend_elements.append(Line2D([0], [0], marker='^', color='w', 
-                                     markerfacecolor='blue', markersize=12,
-                                     label=f'CLUSTER ({drone_labels_map["CLUSTER"]})'))
-    if drone_labels_map['RELAY'] > 0:
-        legend_elements.append(Line2D([0], [0], marker='^', color='w', 
-                                     markerfacecolor='cyan', markersize=12,
-                                     label=f'RELAY ({drone_labels_map["RELAY"]})'))
-    
-    # Add tower
-    legend_elements.append(Line2D([0], [0], marker='s', color='w', 
-                                 markerfacecolor='purple', markersize=12,
-                                 label='5G Tower'))
-    
-    ax_coverage.legend(handles=legend_elements, loc='upper right', 
-                      fontsize=10, framealpha=0.95, edgecolor='black')
-    
-    # Update status bar
-    alive_count = len(alive_drones)
-    detected_people = sum(u.group_size for u in users if u.detected)
-    served_people = sum(u.group_size for u in users if u.served)
-    total_people = sum(u.group_size for u in users)
-    total_throughput = sum(u.throughput for u in users)
-    avg_battery = np.mean([d.battery for d in alive_drones]) if alive_drones else 0
-    avg_throughput = total_throughput / len(served) if served else 0
-    
+            pct = d.battery / BATTERY_INIT * 100
+            col = 'green' if pct > 55 else 'orange' if pct > 25 else 'red'
+            ax.text(d.pos[0], d.pos[1] + 28, f"D{d.id}\n{int(pct)}%",
+                    ha='center', fontsize=8.5, fontweight='bold',
+                    bbox=dict(boxstyle='round,pad=0.35', fc='white', alpha=0.9, ec=col))
+
+    # Tower & Station
+    ax.scatter(*TOWER_POSITION[:2], s=100, marker='s', c='purple', edgecolor='black', lw=2.5,
+               label='5G Tower', zorder=12)
+    ax.scatter(*STATION_POSITION[:2], s=100, marker='D', c='darkgreen', edgecolor='black', lw=2.2,
+               label='Monitoring Station', zorder=12)
+
+    ax.legend(loc='upper right', fontsize=9.5, framealpha=0.95)
+
+    # Status bar
+    alive_cnt = len(alive_drones)
+    det_p = sum(u.group_size for u in users if u.detected)
+    srv_p = sum(u.group_size for u in users if u.served)
+    tot_p = sum(u.group_size for u in users)
+    tot_thr = sum(u.throughput for u in users if u.served)
+    avg_bat = np.mean([d.battery for d in alive_drones]) if alive_drones else 0
+    reports = len(station.received_reports)
+
     status_text.set_text(
-        f"Time: {frame}s / {SIM_TIME}s  |  "
-        f"Drones Active: {alive_count}/{NUM_DRONES}  |  "
-        f"Avg Battery: {avg_battery:.0f}J ({100*avg_battery/BATTERY_INIT:.1f}%)  |  "
-        f"Detection: {detected_people}/{total_people} ({100*detected_people/max(1,total_people):.1f}%)  |  "
-        f"Service: {served_people}/{total_people} ({100*served_people/max(1,total_people):.1f}%)  |  "
-        f"Total Throughput: {total_throughput:.1f} Mbps  |  "
-        f"Avg per User: {avg_throughput:.1f} Mbps  |  "
-        f"Clusters: {len(clusters_formed)}"
+        f"t = {current_time:.0f}s / {SIM_TIME}s   |   "
+        f"Drones: {alive_cnt}/{NUM_DRONES}   |   "
+        f"Battery avg: {avg_bat:.0f}J ({avg_bat/BATTERY_INIT*100:.0f}%)   |   "
+        f"Detected: {det_p}/{tot_p}   |   "
+        f"Served: {srv_p}/{tot_p} ({srv_p/tot_p*100:.1f}%)   |   "
+        f"Throughput: {tot_thr:.1f} Mbps   |   "
+        f"Clusters: {len(clusters_formed)}   |   "
+        f"Station reports: {reports}"
     )
-    
-    return ax_coverage,
+
+    return ax,
 
 # RUN ANIMATION
-print("Starting coverage map visualization...")
-print("- Shows drone coverage areas and service connections")
-print("- Larger markers = larger groups of people")
-print("- Lines connect served users to their serving drone")
-print("- Colors indicate service status and drone modes")
-print("="*60 + "\n")
+print("Starting 2D coverage visualization...")
+print("- Network links colored by capacity (violet=high, plum=low)")
+print("- Same detection / cluster / reporting logic as 3D version")
+print("- Monitoring Station tracks all successful reports")
+ani = FuncAnimation(fig, animate, frames=range(0, int(SIM_TIME / DT) + 1),
+                    interval=60, blit=False)
 
-ani = FuncAnimation(fig, animate, frames=range(0, SIM_TIME, DT),
-                    interval=50, blit=False)
-
-plt.tight_layout()
+plt.tight_layout(rect=[0, 0.04, 1, 0.96])
 plt.show()
 
 # FINAL STATISTICS
-print("\n" + "="*60)
-print("SIMULATION COMPLETE - COVERAGE MAP")
-print("="*60)
+print("\n" + "="*70)
+print("SIMULATION COMPLETE – 2D COVERAGE MAP")
+print("="*70)
 
-final_detected = sum(u.group_size for u in users if u.detected)
-final_served = sum(u.group_size for u in users if u.served)
-total_people = sum(u.group_size for u in users)
+alive_final = sum(1 for d in drones if d.alive)
+det_final = sum(u.group_size for u in users if u.detected)
+srv_final = sum(u.group_size for u in users if u.served)
+tot_final = sum(u.group_size for u in users)
 
-print(f"\nFinal Statistics:")
-print(f"  • Duration: {SIM_TIME}s")
-print(f"  • Drones Survived: {sum(d.alive for d in drones)}/{NUM_DRONES}")
-print(f"  • Average Battery Remaining: {np.mean([d.battery for d in drones if d.alive]):.0f}J")
-print(f"  • Battery Utilization: {100*(1 - np.mean([d.battery/BATTERY_INIT for d in drones if d.alive])):.1f}%")
-print(f"  • People Detected: {final_detected}/{total_people} ({100*final_detected/total_people:.1f}%)")
-print(f"  • People Served: {final_served}/{total_people} ({100*final_served/total_people:.1f}%)")
-print(f"  • Final Coverage Rate: {100*final_served/total_people:.1f}%")
-print(f"  • Clusters Formed: {len(clusters_formed)}")
-print(f"  • Total Alerts Sent: {len(operator.notifications)}")
+print(f"Duration:                {SIM_TIME} s")
+print(f"Drones survived:         {alive_final} / {NUM_DRONES}")
+print(f"Avg battery remaining:   {np.mean([d.battery for d in drones if d.alive]) if any(d.alive for d in drones) else 0:.0f} J")
+print(f"People detected:         {det_final} / {tot_final}  ({det_final/tot_final*100:.1f}%)")
+print(f"People served:           {srv_final} / {tot_final}  ({srv_final/tot_final*100:.1f}%)")
+print(f"Clusters formed:         {len(clusters_formed)}")
+print(f"Total alerts sent:       {len(operator.notifications)}")
+print(f"Reports received at station: {len(station.received_reports)}")
 
-# Network performance metrics
-served_users = [u for u in users if u.served]
-if served_users:
-    avg_throughput = np.mean([u.throughput for u in served_users])
-    avg_hops = np.mean([u.hops_to_tower for u in served_users])
-    print(f"\nNetwork Performance:")
-    print(f"  • Average Throughput: {avg_throughput:.2f} Mbps")
-    print(f"  • Average Hops to Tower: {avg_hops:.2f}")
-    print(f"  • Total Network Throughput: {sum(u.throughput for u in served_users):.1f} Mbps")
+print("\nFirst 10 station reports:")
+for i, r in enumerate(station.received_reports[:10], 1):
+    print(f" {i}. t={r['time']:3.0f}s  Drone {r['drone_id']}  →  {r['group_size']} pers   "
+          f"{r['hops']} hops   {r['capacity']:.1f} Mbps")
 
-print("\nDetection Timeline (first 10 alerts):")
-for i, notif in enumerate(operator.notifications[:10]):
-    if 'group_size' in notif:
-        print(f"  {i+1}. t={notif['time']:3d}s - Drone {notif['drone_id']} detected "
-              f"{notif['group_size']} person(s)")
+print("\n" + "="*70)
 
-print("\n" + "="*60)
