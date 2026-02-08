@@ -127,18 +127,21 @@ def animate(frame):
     detected   = [u for u in users if u.detected and not u.served]
     served     = [u for u in users if u.served]
 
+    # Status - Drone hasn't detected base; base hasn't recieved signal
     if undetected:
         ax.scatter([u.pos[0] for u in undetected], [u.pos[1] for u in undetected],
                    s=[28 + u.group_size*6 for u in undetected],
                    c='lightgray', edgecolor='k', alpha=0.75,
                    label=f'Undetected ({len(undetected)})')
 
+    # Status - Drone has detected base; base hasn't recieved signal
     if detected:
         ax.scatter([u.pos[0] for u in detected], [u.pos[1] for u in detected],
                    s=[40 + u.group_size*6 for u in detected],
                    marker='*', c='orange', edgecolor='darkorange',
                    label=f'Detected ({len(detected)})')
 
+    # Status - Drone has detected base; base has recieved signal
     if served:
         ax.scatter([u.pos[0] for u in served], [u.pos[1] for u in served],
                    s=[48 + u.group_size*6 for u in served],
